@@ -10,355 +10,215 @@ const CONFIG = {
   FIELD: {
     COLUMNS: 40,
     ROWS: 24,
-    CORRIDORS: {
-      MIN: 3,
-      MAX: 5
-    },
+    CORRIDORS: { MIN: 3, MAX: 5 },
     ROOMS: {
       MIN: 5,
       MAX: 10,
-      SIZE: {
-        MIN: 3,
-        MAX: 8
-      }
-    }
+      SIZE: { MIN: 3, MAX: 8 }
+    },
   },
-  SWORDS: {
-    BUFF: 50,
-    COUNT: 2
-  },
-  POTIONS: {
-    HEALTH: 100,
-    COUNT: 10
-  },
-  ENEMY: {
-    COUNT: 10,
-    STARTING_DISTANCE: 2,
-    DAMAGE: 5
-  },
-  BOSS: {
-    DAMAGE: 10,
-    STARTING_DISTANCE: 10,
-    ARMOR: 2.5
-  },
-  PLAYER: {
-    DAMAGE: 25
-  }
+  SWORD: { BUFF: 50, COUNT: 2, SYMBOL: 'SW' },
+  POTION: { HEALTH: 100, COUNT: 10, SYMBOL: 'HP' },
+  ENEMY: { DAMAGE: 5, STARTING_DISTANCE: 2, COUNT: 10, SYMBOL: 'E' },
+  BOSS: { DAMAGE: 10, STARTING_DISTANCE: 10, ARMOR: 2.5, SYMBOL: 'B' },
+  PLAYER: { DAMAGE: 25, SYMBOL: 'P' },
+  WALL: { SYMBOL: 'W' },
+  EMPTY: { SYMBOL: '' }
 }
 
 function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-class Game {
-  gameStatus;
-  mainTimer;
+class Unit {
+  constructor(x, y, damage, armor = 1) {
+    this.x = x;
+    this.y = y;
+    this.attacking = false;
+    this.health = 100;
+    this.strength = 0;
+    this.damage = damage;
+    this.armor = armor;
+  }
 
-  corridorsH = [];
-  corridorsV = [];
-  
-  playerMoved = false;
-  playerCoords = [];
-  playerHealth = 100;
-  playerHealthPrev = 100;
-  playerAttacking = false;
-  playerAttackingPrev = false;
-  playerStrength = 0;
-  playerStrengthPrev = 0;
-  
-  enemiesCount = 0;
-  enemiesCoords = [];
-  enemiesHealth = [];
-  enemiesHealthPrev = [];
-  enemiesAttacking = [];
-  enemiesAttackingPrev = [];
-  
-  bossCount = 0;
-  bossCoords = [];
-  bossHealth = 1;
-  bossHealthPrev = 1;
-  bossAttacking = false;
-  bossAttackingPrev = false;
+  move(x, y) {
+    this.x = x;
+    this.y = y;
+  }
 
+  attack(target) {
+    const totalDamage = this.damage * (1 + this.strength / 100);
+    target.takeDamage(totalDamage);
+  }
+
+  takeDamage(amount) {
+    const realDamage = amount / this.armor;
+    this.health -= realDamage;
+    if (this.health <= 0) this.health = 0;
+  }
+}
+
+class Player extends Unit {
+  constructor(x, y, damage, armor = 1) {
+    super(x, y, damage, armor);
+    this.moved = false;
+  }
+
+  useItem(type) {
+    switch (type) {
+      case CONFIG.SWORD.SYMBOL:
+        this.strength += CONFIG.SWORD.BUFF;
+        if (this.strength > 100) this.strength = 100;
+        break;
+      case CONFIG.POTION.SYMBOL:
+        this.health += CONFIG.POTION.HEALTH;
+        if (this.health > 100) this.health = 100;
+        break;
+    }
+  }
+}
+
+class Item {
+  constructor(type, x, y) {
+    this.type = type;
+    this.x = x;
+    this.y = y;
+  }
+}
+
+class GameField {
   constructor() {
-    this.cellsData = Array(CONFIG.FIELD.COLUMNS).fill().map(() => Array(CONFIG.FIELD.ROWS).fill('W'));
-    this.cellsDataPrev = Array(CONFIG.FIELD.COLUMNS).fill().map(() => Array(CONFIG.FIELD.ROWS).fill(''));
-  
-    this.initJSS();
-    this.initField();
-    this.generateCorridors();
-    this.generateRooms();
-    this.placePlayer();
-    this.placeItems(CONFIG.SWORDS.COUNT, 'SW');
-    this.placeItems(CONFIG.POTIONS.COUNT,'HP');
-    this.placeEnemies(CONFIG.ENEMY.COUNT);
-    this.placeBoss();
+    this.columns = CONFIG.FIELD.COLUMNS;
+    this.rows = CONFIG.FIELD.ROWS;
+    this.cells = Array(this.columns).fill().map(() => Array(this.rows).fill(CONFIG.WALL.SYMBOL));
+    this.cellsPrev = Array(this.columns).fill().map(() => Array(this.rows).fill(CONFIG.EMPTY.SYMBOL));
+    this.corridorsH = [];
+    this.corridorsV = [];
   }
 
-  init() {
-    function mainCycle() {
-      this.moveBoss();
-      this.moveEnemies();
-      this.enemiesAttacks();
-      this.bossAttacks();
-      this.checkPlayerHealth();
-      this.checkWin();
-      this.drawField();
-      this.saveTickData();
+  getFreeCell(distanceLimit = -1, targetX = 0, targetY = 0) {
+    let x, y;
+    do {
+      x = getRandomInt(0, this.columns - 1);
+      y = getRandomInt(0, this.rows - 1);
+    } while (
+      this.cells[x][y] !== CONFIG.EMPTY.SYMBOL ||
+      Math.abs(targetX - x) <= distanceLimit &&
+      Math.abs(targetY - y) <= distanceLimit
+    );
+    return [x, y];
+  }
+
+  setCell(type, x, y) {
+    this.cells[x][y] = type;
+  }
+
+  generateCorridors() {
+    const min = CONFIG.FIELD.CORRIDORS.MIN;
+    const max = CONFIG.FIELD.CORRIDORS.MAX;
+
+    this.corridorsH = this.generateRandomCorridors(min, max, this.rows);
+    this.corridorsV = this.generateRandomCorridors(min, max, this.columns);
+
+    this.corridorsH.forEach(y => {
+      for (let x = 0; x < this.columns; x++) {
+        this.cells[x][y] = CONFIG.EMPTY.SYMBOL;
+      }
+    });
+
+    this.corridorsV.forEach(x => {
+      for (let y = 0; y < this.rows; y++) {
+        this.cells[x][y] = CONFIG.EMPTY.SYMBOL;
+      }
+    });
+  }
+
+  generateRandomCorridors(min, max, fieldLimit) {
+    const count = getRandomInt(min, max);
+    const result = [];
+    const available = Array(fieldLimit).fill(true);
+
+    while (result.length < count) {
+      const position = getRandomInt(0, fieldLimit - 1);
+      if (available[position]) {
+        result.push(position);
+        available[position] = false;
+        if (position > 0) available[position - 1] = false;
+        if (position < fieldLimit - 1) available[position + 1] = false;
+      }
     }
-    this.mainTimer = setInterval(mainCycle.bind(this), CONFIG.DELAY);
+
+    return result;
+  }
+
+  generateRooms() {
+    const targetRooms = getRandomInt(CONFIG.FIELD.ROOMS.MIN, CONFIG.FIELD.ROOMS.MAX);
+    const available = Array(this.columns).fill().map(() => Array(this.rows).fill(true));
+    let roomsCreated = 0;
+
+    for (let i = 0; i < 1000 && roomsCreated < targetRooms; i++) {
+      const width = getRandomInt(CONFIG.FIELD.ROOMS.SIZE.MIN, CONFIG.FIELD.ROOMS.SIZE.MAX);
+      const height = getRandomInt(CONFIG.FIELD.ROOMS.SIZE.MIN, CONFIG.FIELD.ROOMS.SIZE.MAX);
+      const x = getRandomInt(0, this.columns - width);
+      const y = getRandomInt(0, this.rows - height);
+
+      if (this.canPlaceRoom(x, y, width, height, available)) {
+        this.placeRoom(x, y, width, height);
+        this.markRoomArea(x, y, width, height, available);
+        roomsCreated++;
+      }
+    }
+  }
+
+  canPlaceRoom(x, y, width, height, available) {
+    for (let i = x; i < x + width; i++) {
+      for (let j = y; j < y + height; j++) {
+        if (!available[i][j]) return false;
+      }
+    }
+
+    for (let corridor of this.corridorsH) {
+      if (y <= corridor && corridor < y + height) return true;
+    }
+    for (let corridor of this.corridorsV) {
+      if (x <= corridor && corridor < x + width) return true;
+    }
+
+    return false;
+  }
+
+  placeRoom(x, y, width, height) {
+    for (let i = x; i < x + width; i++) {
+      for (let j = y; j < y + height; j++) {
+        this.cells[i][j] = CONFIG.EMPTY.SYMBOL;
+      }
+    }
+  }
+
+  markRoomArea(x, y, width, height, available) {
+    for (let i = x - 1; i <= x + width; i++) {
+      for (let j = y - 1; j <= y + height; j++) {
+        if (i >= 0 && i < this.columns && j >= 0 && j < this.rows) {
+          available[i][j] = false;
+        }
+      }
+    }
+  }
+}
+
+class Renderer {
+  initDOM(rows, columns) {
     document.documentElement.style.setProperty('--main-cycle-delay', CONFIG.DELAY / 1000 + 's');
-    document.documentElement.style.setProperty('--aspect', CONFIG.FIELD.COLUMNS / CONFIG.FIELD.ROWS);
-    this.bindKeys();
-    this.gameStatus = 'active';
-  }
+    document.documentElement.style.setProperty('--aspect', columns / rows);
 
-  stopGame() {
-    this.drawField();
-    if (this.mainTimer) {
-      clearInterval(this.mainTimer);
-      this.mainTimer = null;
-    }
-  }
-
-  bindKeys() {
-    $(document).keydown(function(event) {
-      switch(event.code) {
-        case 'ArrowUp':
-        case CONFIG.KEYS.UP:
-          this.movePlayer('U');
-          break;
-        case 'ArrowDown':
-        case CONFIG.KEYS.DOWN:
-          this.movePlayer('D');
-          break;
-        case 'ArrowLeft':
-        case CONFIG.KEYS.LEFT:
-          this.movePlayer('L');
-          break;
-        case 'ArrowRight':
-        case CONFIG.KEYS.RIGHT:
-          this.movePlayer('R');
-          break;
-        case 'Space':
-        case CONFIG.KEYS.FIRE:
-          this.playerAttack();
-          break;
-      }    
-    }.bind(this));
-  }
-
-  enemiesAttacks() {
-    for (let e = 0; e < this.enemiesCount; e++) {
-      if (
-        Math.abs(this.enemiesCoords[e][0] - this.playerCoords[0]) <= 1 &&
-        Math.abs(this.enemiesCoords[e][1] - this.playerCoords[1]) <= 1
-      ) {
-        this.enemiesAttacking[e] = true;
-        this.playerHealth -= CONFIG.ENEMY.DAMAGE;
-      }
-    }
-  }
-
-  bossAttacks() {
-    if (
-      this.bossCount > 0 &&
-      Math.abs(this.bossCoords[0] - this.playerCoords[0]) <= 1 &&
-      Math.abs(this.bossCoords[1] - this.playerCoords[1]) <= 1
-    ) {
-      this.bossAttacking = true;
-      this.playerHealth -= CONFIG.BOSS.DAMAGE;
-    }
-  }
-
-  checkPlayerHealth() {
-    if (this.playerHealth <= 0) {
-      this.cellsData[this.playerCoords[0]][this.playerCoords[1]] = 'SW';
-      this.gameStatus = 'loss';
-      this.stopGame();
-    }
-  }
-
-  checkWin() {
-    if (this.bossCount <= 0 && this.enemiesCount <= 0) {
-      this.gameStatus = 'win';
-      this.stopGame();
-    }
-  }
-
-  playerAttack() {
-    if (!this.playerAttacking && this.gameStatus === 'active') {
-      this.playerAttacking = true;
-
-      for (let e = 0; e < this.enemiesCount; e++) {
-        if (
-          Math.abs(this.enemiesCoords[e][0] - this.playerCoords[0]) <= 1 &&
-          Math.abs(this.enemiesCoords[e][1] - this.playerCoords[1]) <= 1
-        ) {
-          this.enemiesHealth[e] -= CONFIG.PLAYER.DAMAGE * (1 + this.playerStrength / 100);
-          if (this.enemiesHealth[e] <= 0) {
-            this.cellsData[this.enemiesCoords[e][0]][this.enemiesCoords[e][1]] = '';
-            this.enemiesCount--;
-            this.enemiesCoords.splice(e, 1);
-            this.enemiesHealth.splice(e, 1);
-            this.enemiesHealthPrev.splice(e, 1);
-            this.enemiesAttacking.splice(e, 1);
-            this.enemiesAttackingPrev.splice(e, 1);
-            e--;
-          }
-        }
-      }
-
-      if (
-        this.bossCount > 0 &&
-        Math.abs(this.bossCoords[0] - this.playerCoords[0]) <= 1 &&
-        Math.abs(this.bossCoords[1] - this.playerCoords[1]) <= 1
-      ) {
-        this.bossHealth -= CONFIG.PLAYER.DAMAGE / CONFIG.BOSS.ARMOR * (1 + this.playerStrength / 100);
-        if (this.bossHealth <= 0) {
-          this.cellsData[this.bossCoords[0]][this.bossCoords[1]] = 'SW';
-          this.bossCount--;
-        }
-      }
-    }  
-  }
-
-  movePlayer(direction) {
-    let wantedX, wantedY;
-
-    function checkCell(direction) {
-      switch(direction) {
-        case 'U':
-          wantedX = this.playerCoords[0];
-          wantedY = this.playerCoords[1] - 1;
-          break;
-        case 'D':
-          wantedX = this.playerCoords[0];
-          wantedY = this.playerCoords[1] + 1;
-          break;
-        case 'L':
-          wantedX = this.playerCoords[0] - 1;
-          wantedY = this.playerCoords[1];
-          break;
-        case 'R':
-          wantedX = this.playerCoords[0] + 1;
-          wantedY = this.playerCoords[1];
-          break;
-      }
-      if (
-        wantedX >= 0 &&
-        wantedX < CONFIG.FIELD.COLUMNS &&
-        wantedY >= 0 &&
-        wantedY < CONFIG.FIELD.ROWS &&
-        ['', 'HP', 'SW'].includes(this.cellsData[wantedX][wantedY])
-      ) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-
-    if (!this.playerMoved && this.gameStatus === 'active' && checkCell.bind(this)(direction)) {
-      if (this.cellsData[wantedX][wantedY] === 'SW') {
-        this.playerStrength += CONFIG.SWORDS.BUFF;
-        if (this.playerStrength > 100) {
-          this.playerStrength = 100;
-        }
-      } else if (this.cellsData[wantedX][wantedY] === 'HP') {
-        this.playerHealth += CONFIG.POTIONS.HEALTH;
-        if (this.playerHealth > 100) {
-          this.playerHealth = 100;
-        }
-      }
-
-      this.cellsData[this.playerCoords[0]][this.playerCoords[1]] = '';
-      this.playerCoords = [wantedX, wantedY];
-      this.cellsData[this.playerCoords[0]][this.playerCoords[1]] = 'P';
-
-      this.playerMoved = true;
-    }
-  }
-
-  moveEnemies() {
-    let wantedX, wantedY;
-    for(let e = 0; e < this.enemiesCount; e++) {
-      if (!this.enemiesAttackingPrev[e]) {
-        wantedX = this.enemiesCoords[e][0] + getRandomInt(-1, 1);
-        wantedY = this.enemiesCoords[e][1] + getRandomInt(-1, 1);
-        if (
-          wantedX >= 0 &&
-          wantedX < CONFIG.FIELD.COLUMNS &&
-          wantedY >= 0 &&
-          wantedY < CONFIG.FIELD.ROWS &&
-          this.cellsData[wantedX][wantedY] === ''
-        ) {
-          this.cellsData[this.enemiesCoords[e][0]][this.enemiesCoords[e][1]] = '';
-          this.enemiesCoords[e] = [wantedX, wantedY];
-          this.cellsData[this.enemiesCoords[e][0]][this.enemiesCoords[e][1]] = 'E';
-        }
-      }  
-    }
-  }
-
-  moveBoss() {
-    let distanceX, distanceY, wantedX, wantedY;
-
-    function checkWall(wantedX, wantedY) {
-      return (
-        wantedX >= 0 &&
-        wantedX < CONFIG.FIELD.COLUMNS &&
-        wantedY >= 0 &&
-        wantedY < CONFIG.FIELD.ROWS &&
-        this.cellsData[wantedX][wantedY] === ''
-      );
-    }
-
-    if (this.bossCount > 0 && !this.bossAttackingPrev) {
-      distanceX = this.playerCoords[0] - this.bossCoords[0];
-      distanceY = this.playerCoords[1] - this.bossCoords[1];
-      wantedX = this.bossCoords[0] + Math.sign(distanceX);
-      wantedY = this.bossCoords[1] + Math.sign(distanceY);
-      
-      if (Math.abs(distanceX) > Math.abs(distanceY)) {
-        if (checkWall.bind(this)(wantedX, this.bossCoords[1])) {
-          wantedY = this.bossCoords[1];
-        } else if (checkWall.bind(this)(this.bossCoords[0], wantedY)) {
-          wantedX = this.bossCoords[0];
-        }
-      } else {
-        if (checkWall.bind(this)(this.bossCoords[0], wantedY)) {
-          wantedX = this.bossCoords[0];
-        } else if (checkWall.bind(this)(wantedX, this.bossCoords[1])) {
-          wantedY = this.bossCoords[1];
-        }
-      }
-      
-      if (checkWall.bind(this)(wantedX, wantedY)) {
-        this.cellsData[this.bossCoords[0]][this.bossCoords[1]] = '';
-        this.bossCoords = [wantedX, wantedY];
-        this.cellsData[this.bossCoords[0]][this.bossCoords[1]] = 'B';
-      }
-
-    }
-  }
-
-  initJSS() {
-    window.jss.default.use(window.jssPluginCamelCase.default());
-    this.styles = {
-      field: {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(' + CONFIG.FIELD.COLUMNS + ', 1fr)',
-        gridTemplateRows: 'repeat(' + CONFIG.FIELD.ROWS + ', 1fr)'
-      },
-    };
-    this.classes = window.jss.default.createStyleSheet(this.styles).attach().classes;
-  }
-
-  initField() {
-    $('.field').addClass(this.classes.field);
+    $('.field').css({
+      display: 'grid',
+      gridTemplateColumns: 'repeat(' + columns + ', 1fr)',
+      gridTemplateRows: 'repeat(' + rows + ', 1fr)'
+    })
 
     const fragment = document.createDocumentFragment();
-    for(let i = 0; i < CONFIG.FIELD.ROWS * CONFIG.FIELD.COLUMNS; i++) {
+    for (let i = 0; i < rows * columns; i++) {
       const cell = document.createElement('div')
       cell.classList.add('tile');
       fragment.appendChild(cell);
@@ -366,14 +226,14 @@ class Game {
     $('.field').empty().append(fragment);
   }
 
-  drawField() {
-    for (let i = 0; i < CONFIG.FIELD.COLUMNS; i++) {
-      for (let j = 0; j < CONFIG.FIELD.ROWS; j++) {
+  drawDOM(field, player, enemies, boss, gameStatus) {
+    for (let i = 0; i < field.columns; i++) {
+      for (let j = 0; j < field.rows; j++) {
         let enemyNumber = -1;
-        if (this.cellsData[i][j] === 'E') {
+        if (field.cells[i][j] === CONFIG.ENEMY.SYMBOL) {
           let e = 0;
-          while (e < this.enemiesCount && enemyNumber === -1) {
-            if (this.enemiesCoords[e][0] === i && this.enemiesCoords[e][1] === j) {
+          while (e < enemies.length && enemyNumber === -1) {
+            if (enemies[e].x === i && enemies[e].y === j) {
               enemyNumber = e;
             }
             e++;
@@ -381,315 +241,345 @@ class Game {
         }
 
         if (
-          this.cellsData[i][j] !== this.cellsDataPrev[i][j] ||
-          this.cellsData[i][j] === 'P' && (
-            this.playerHealth !== this.playerHealthPrev ||
-            this.playerAttacking ||
-            this.playerAttackingPrev ||
-            this.playerStrength !== this.playerStrengthPrev
-          ) ||
-          this.cellsData[i][j] === 'B' && (
-            this.bossHealth !== this.bossHealthPrev ||
-            this.bossAttacking ||
-            this.bossAttackingPrev
-          ) ||
-          this.cellsData[i][j] === 'E' &&
-          enemyNumber >= 0 && (
-            this.enemiesHealth[enemyNumber] !== this.enemiesHealthPrev[enemyNumber] ||
-            this.enemiesAttacking[enemyNumber] ||
-            this.enemiesAttackingPrev[enemyNumber]
-          )
+          field.cells[i][j] !== field.cellsPrev[i][j] ||
+          [CONFIG.PLAYER.SYMBOL, CONFIG.BOSS.SYMBOL, CONFIG.ENEMY.SYMBOL].includes(field.cells[i][j])
         ) {
-          const elemIndex = j * CONFIG.FIELD.COLUMNS + i;
+          field.cellsPrev[i][j] = field.cells[i][j];
+          const elemIndex = j * field.columns + i;
           const newStyleClasses = 'tile' +
-            (this.cellsData[i][j] !== '' ? ' tile' + this.cellsData[i][j] : '') +
-            (this.gameStatus === 'active' && (
-              this.cellsData[i][j] === 'P' && this.playerAttacking ||
-              this.cellsData[i][j] === 'E' && this.enemiesAttacking[enemyNumber] ||
-              this.cellsData[i][j] === 'B' && this.bossAttacking
+            (field.cells[i][j] !== CONFIG.EMPTY.SYMBOL ? ' tile' + field.cells[i][j] : '') +
+            (gameStatus === 'active' && (
+              field.cells[i][j] === CONFIG.PLAYER.SYMBOL && player.attacking ||
+              field.cells[i][j] === CONFIG.ENEMY.SYMBOL && enemies[enemyNumber].attacking ||
+              field.cells[i][j] === CONFIG.BOSS.SYMBOL && boss && boss.attacking
             ) ? ' attack' : '')
           $('.field').children().eq(elemIndex).attr('class', newStyleClasses);
 
-          if (this.cellsData[i][j] === 'P') {
-            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', this.playerHealth+'%')
-            $('.field').children().eq(elemIndex).prop('style').setProperty('--strength', this.playerStrength+'%')
+          if (field.cells[i][j] === CONFIG.PLAYER.SYMBOL) {
+            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', player.health + '%')
+            $('.field').children().eq(elemIndex).prop('style').setProperty('--strength', player.strength + '%')
           }
-          if (this.cellsData[i][j] === 'E') {
-            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', this.enemiesHealth[enemyNumber]+'%')
+          if (field.cells[i][j] === CONFIG.ENEMY.SYMBOL) {
+            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', enemies[enemyNumber].health + '%')
           }
-          if (this.cellsData[i][j] === 'B') {
-            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', this.bossHealth+'%')
+          if (field.cells[i][j] === CONFIG.BOSS.SYMBOL) {
+            $('.field').children().eq(elemIndex).prop('style').setProperty('--hp', (boss ? boss.health : 0) + '%')
           }
-
         }
       }
     }
 
-    if (this.gameStatus === 'loss' || this.gameStatus === 'win') {
-      $('.field').addClass(this.gameStatus);
+    if (gameStatus === 'loss' || gameStatus === 'win') {
+      $('.field').addClass(gameStatus);
     }
   }
+}
 
-  saveTickData() {
-    this.cellsData.forEach((row, i) => {
-      this.cellsDataPrev[i] = row.slice();
-    });
-    
-    this.enemiesHealth.forEach((value, i) => {
-      this.enemiesHealthPrev[i] = value;
-    });
-    this.bossHealthPrev = this.bossHealth;
-    this.playerHealthPrev = this.playerHealth;
+class Game {
+  constructor() {
+    this.field = new GameField();
+    this.renderer = new Renderer();
+    this.player = null;
+    this.enemies = [];
+    this.boss = null;
+    this.items = [];
+    this.gameStatus = null;
+    this.mainTimer = null;
 
-    this.playerStrengthPrev = this.playerStrength;
-    
-    this.playerMoved = false;
-
-    this.playerAttackingPrev = this.playerAttacking;
-    this.playerAttacking = false;
-    this.bossAttackingPrev = this.bossAttacking;
-    this.bossAttacking = false;
-    this.enemiesAttacking.forEach((value, i) => {
-      this.enemiesAttackingPrev[i] = value;
-      this.enemiesAttacking[i] = false;
-    });
-  }
-
-  generateCorridors() {
-    function generateCorridorsNumbers(need, max) {
-      const corridors = [];
-  
-      const availablePlaces = Array(max).fill(true);
-  
-      function countAvailablePlaces() {
-        let counter = 0;
-        for (let i = 0; i < max; i++) {
-          if (availablePlaces[i]) {
-            counter++;
-          }
-        }
-        return counter;
-      }
-  
-      function getPlaceNumber(availablePlaceNumber) {
-        let i = 0;
-        let needShift = availablePlaceNumber-1;
-  
-        while (needShift > 0 || !availablePlaces[i]) {
-          if (availablePlaces[i]) {
-            needShift--;
-          }
-          if (i++ >= max ) i = 0;
-        }
-        return i;
-      }
-  
-      while (corridors.length < need && countAvailablePlaces() > 0) {
-        const newPlaceWithinAvailable = getRandomInt(1, countAvailablePlaces());
-        const newPlace = getPlaceNumber(newPlaceWithinAvailable);
-        availablePlaces[newPlace] = false;
-        if (newPlace - 1 >= 0) availablePlaces[newPlace - 1] = false;
-        if (newPlace + 1 < max) availablePlaces[newPlace + 1] = false;
-        corridors.push(newPlace);
-      }
-  
-      return corridors;
-    }
-
-    this.corridorsH = generateCorridorsNumbers(
-      getRandomInt(CONFIG.FIELD.CORRIDORS.MIN, CONFIG.FIELD.CORRIDORS.MAX),
-      CONFIG.FIELD.ROWS
-    );
-    this.corridorsV = generateCorridorsNumbers(
-      getRandomInt(CONFIG.FIELD.CORRIDORS.MIN, CONFIG.FIELD.CORRIDORS.MAX),
-      CONFIG.FIELD.COLUMNS
-    );
-
-    for (let c = 0; c < this.corridorsH.length; c++) {
-      for (let i = 0; i < CONFIG.FIELD.COLUMNS; i++) {
-        this.cellsData[i][this.corridorsH[c]] = '';
-      }  
-    }
-
-    for (let c = 0; c < this.corridorsV.length; c++) {
-      for (let j = 0; j < CONFIG.FIELD.ROWS; j++) {
-        this.cellsData[this.corridorsV[c]][j] = '';
-      }  
-    }
-  }
-
-  generateRooms() {
-    function checkCorridors(baseX, baseY, lengthX, lengthY) {
-      let result = false;
-      
-      for (let c = 0; c < this.corridorsV.length; c++) {
-        if (this.corridorsV[c] >= baseX && this.corridorsV[c] <= baseX + lengthX - 1) {
-          result = true;
-          break;
-        }
-      }
-
-      if (!result) {
-        for (let c = 0; c < this.corridorsH.length; c++) {
-          if (this.corridorsH[c] >= baseY && this.corridorsH[c] <= baseY + lengthY - 1) {
-            result = true;
-            break;
-          }
-        }
-      }
-
-      return result;
-    }
-
-    function checkRooms(baseX, baseY, lengthX, lengthY) {
-      for (let i = baseX; i < baseX + lengthX; i++) {
-        for (let j = baseY; j < baseY + lengthY; j++) {
-          if (!availableCells[i][j]) {
-            return false;
-          }
-        }    
-      }
-      return true;
-    }
-
-    function setSpaceForRoom(baseX, baseY, lengthX, lengthY) {
-      for (let i = baseX; i < baseX + lengthX; i++) {
-        for (let j = baseY; j < baseY + lengthY; j++) {
-          availableCells[i][j] = false;
-        }
-      }
-      for (const i of [baseX - 1, baseX + lengthX]) {
-        if (i >= 0 && i < CONFIG.FIELD.COLUMNS) {
-          for (let j = baseY; j < baseY + lengthY; j++) {
-            if (j >= 0 && j < CONFIG.FIELD.ROWS) {
-              availableCells[i][j] = false;
-            }  
-          }
-        }
-      }  
-      for (const j of [baseY - 1, baseY + lengthY]) {
-        if (j >= 0 && j < CONFIG.FIELD.ROWS) {
-          for (let i = baseX + 1; i < baseX + lengthX - 1; i++) {
-            if (i >= 0 && i < CONFIG.FIELD.COLUMNS) {
-              availableCells[i][j] = false;
-            }  
-          }
-        }
-      }
-    }
-
-    function setRoom(baseX, baseY, lengthX, lengthY) {
-      for (let i = baseX; i < baseX + lengthX; i++) {
-        for (let j = baseY; j < baseY + lengthY; j++) {
-          this.cellsData[i][j] = '';
-        }
-      }
-    }
-
-    const roomsCountNeed = getRandomInt(CONFIG.FIELD.ROOMS.MIN, CONFIG.FIELD.ROOMS.MAX);
-    let roomsCount = 0;
-    const iterationLimit = 1000;
-    let iteration = 0;
-
-    const availableCells = Array(CONFIG.FIELD.COLUMNS).fill().map(() => Array(CONFIG.FIELD.ROWS).fill(true));
-
-    while (iteration < iterationLimit && roomsCount < roomsCountNeed) {
-      const lengthX = getRandomInt(CONFIG.FIELD.ROOMS.SIZE.MIN, CONFIG.FIELD.ROOMS.SIZE.MAX);
-      const lengthY = getRandomInt(CONFIG.FIELD.ROOMS.SIZE.MIN, CONFIG.FIELD.ROOMS.SIZE.MAX);
-      const baseX = getRandomInt(0, CONFIG.FIELD.COLUMNS - lengthX);
-      const baseY = getRandomInt(0, CONFIG.FIELD.ROWS - lengthY);
-
-      if (
-        checkCorridors.bind(this)(baseX, baseY, lengthX, lengthY) &&
-        checkRooms(baseX, baseY, lengthX, lengthY)
-      ) {
-        setSpaceForRoom(baseX, baseY, lengthX, lengthY);
-        setRoom.bind(this)(baseX, baseY, lengthX, lengthY);
-        roomsCount++;
-      }
-      iteration++;
-    }
-  }
-
-  placeItems(quantity, sign) {
-    const iterationLimit = 1000;
-    let iteration = 0;
-    let itemsCount = 0;
-    let x, y;
-
-    while(iteration < iterationLimit && itemsCount < quantity) {
-      x = getRandomInt(0, CONFIG.FIELD.COLUMNS - 1);
-      y = getRandomInt(0, CONFIG.FIELD.ROWS - 1);
-      if (this.cellsData[x][y] === '') {
-        this.cellsData[x][y] = sign;
-        itemsCount++;
-      }
-      iteration++;
-    }
+    this.field.generateCorridors();
+    this.field.generateRooms();
+    this.placePlayer();
+    this.placeItems(CONFIG.SWORD.SYMBOL, CONFIG.SWORD.COUNT);
+    this.placeItems(CONFIG.POTION.SYMBOL, CONFIG.POTION.COUNT);
+    this.placeEnemies(CONFIG.ENEMY.COUNT);
+    this.placeBoss();
   }
 
   placePlayer() {
-    let playerPlaced = false;
-    let x, y;
+    const [x, y] = this.field.getFreeCell();
+    this.player = new Player(x, y, CONFIG.PLAYER.DAMAGE);
+    this.field.setCell(CONFIG.PLAYER.SYMBOL, x, y);
+  }
 
-    while(!playerPlaced) {
-      x = getRandomInt(0, CONFIG.FIELD.COLUMNS - 1);
-      y = getRandomInt(0, CONFIG.FIELD.ROWS - 1);
-      if (this.cellsData[x][y] === '') {
-        this.cellsData[x][y] = 'P';
-        this.playerCoords = [x, y];
-        playerPlaced = true;
-      }
+  placeItems(type, quantity) {
+    let x, y;
+    for (let i = 0; i < quantity; i++) {
+      [x, y] = this.field.getFreeCell();
+      this.items.push(new Item(type, x, y));
+      this.field.setCell(type, x, y);
     }
   }
 
   placeEnemies(quantity) {
-    const iterationLimit = 1000;
-    let iteration = 0;
     let x, y;
-
-    while (iteration < iterationLimit && this.enemiesCount < quantity) {
-      x = getRandomInt(0, CONFIG.FIELD.COLUMNS - 1);
-      y = getRandomInt(0, CONFIG.FIELD.ROWS - 1);
-      if (
-        this.cellsData[x][y] === '' &&
-        Math.abs(x - this.playerCoords[0]) > CONFIG.ENEMY.STARTING_DISTANCE &&
-        Math.abs(y - this.playerCoords[1]) > CONFIG.ENEMY.STARTING_DISTANCE
-      ) {
-        this.cellsData[x][y] = 'E';
-        this.enemiesCoords.push([x, y]);
-        this.enemiesHealth.push(100);
-        this.enemiesHealthPrev.push(100);
-        this.enemiesAttacking.push(false);
-        this.enemiesAttackingPrev.push(false);
-        this.enemiesCount++;
-      }
-      iteration++;
+    for (let i = 0; i < quantity; i++) {
+      [x, y] = this.field.getFreeCell(CONFIG.ENEMY.STARTING_DISTANCE, this.player.x, this.player.y);
+      this.enemies.push(new Unit(x, y, CONFIG.ENEMY.DAMAGE));
+      this.field.setCell(CONFIG.ENEMY.SYMBOL, x, y);
     }
   }
 
   placeBoss() {
-    const iterationLimit = 1000;
-    let iteration = 0;
-    let bossPlaced = false;
-    let x, y;
+    const [x, y] = this.field.getFreeCell(CONFIG.BOSS.STARTING_DISTANCE, this.player.x, this.player.y);
+    this.boss = new Unit(x, y, CONFIG.BOSS.DAMAGE, CONFIG.BOSS.ARMOR);
+    this.field.setCell(CONFIG.BOSS.SYMBOL, x, y);
+  }
 
-    while (iteration < iterationLimit && !bossPlaced) {
-      x = getRandomInt(0, CONFIG.FIELD.COLUMNS - 1);
-      y = getRandomInt(0, CONFIG.FIELD.ROWS - 1);
-      if (
-        this.cellsData[x][y] === '' &&
-        Math.abs(x - this.playerCoords[0]) > CONFIG.BOSS.STARTING_DISTANCE &&
-        Math.abs(y - this.playerCoords[1]) > CONFIG.BOSS.STARTING_DISTANCE
-      ) {
-        this.cellsData[x][y] = 'B';
-        this.bossCoords = [x, y];
-        this.bossHealth = 100;
-        this.bossHealthPrev = 100;
-        this.bossCount++;
-        bossPlaced = true;
+  init() {
+    this.renderer.initDOM(this.field.rows, this.field.columns);
+    this.startGameLoop();
+    this.bindKeys();
+    this.gameStatus = 'active';
+  }
+
+  startGameLoop() {
+    this.mainTimer = setInterval(() => {
+      this.update();
+      this.draw();
+      this.resetAttackStates();
+    }, CONFIG.DELAY);
+  }
+
+  update() {
+    this.checkAttacks();
+    this.checkHP();
+    this.checkGameOver();
+    this.moveEnemies();
+    this.moveBoss();
+  }
+
+  draw() {
+    this.renderer.drawDOM(this.field, this.player, this.enemies, this.boss, this.gameStatus);
+  }
+
+  resetAttackStates() {
+    this.enemies.forEach((enemy) => {
+      enemy.attacking = false;
+    });
+    if (this.boss) {
+      this.boss.attacking = false;
+    }
+    this.player.moved = false;
+    this.player.attacking = false;
+  }
+
+  bindKeys() {
+    $(document).keydown((event) => {
+      switch (event.code) {
+        case CONFIG.KEYS.UP:
+        case 'ArrowUp':
+          this.movePlayer('U');
+          break;
+        case CONFIG.KEYS.DOWN:
+        case 'ArrowDown':
+          this.movePlayer('D');
+          break;
+        case CONFIG.KEYS.LEFT:
+        case 'ArrowLeft':
+          this.movePlayer('L');
+          break;
+        case CONFIG.KEYS.RIGHT:
+        case 'ArrowRight':
+          this.movePlayer('R');
+          break;
+        case CONFIG.KEYS.FIRE:
+        case 'Space':
+          this.player.attacking = true;
+          break;
       }
-      iteration++;
+    });
+  }
+
+  movePlayer(direction) {
+    let wantedX, wantedY;
+
+    function checkCell(direction) {
+      switch (direction) {
+        case 'U':
+          wantedX = this.player.x;
+          wantedY = this.player.y - 1;
+          break;
+        case 'D':
+          wantedX = this.player.x;
+          wantedY = this.player.y + 1;
+          break;
+        case 'L':
+          wantedX = this.player.x - 1;
+          wantedY = this.player.y;
+          break;
+        case 'R':
+          wantedX = this.player.x + 1;
+          wantedY = this.player.y;
+          break;
+      }
+      if (
+        wantedX >= 0 &&
+        wantedX < this.field.columns &&
+        wantedY >= 0 &&
+        wantedY < this.field.rows &&
+        [CONFIG.EMPTY.SYMBOL, CONFIG.POTION.SYMBOL, CONFIG.SWORD.SYMBOL].includes(this.field.cells[wantedX][wantedY])
+      ) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    if (!this.player.moved && this.gameStatus === 'active' && checkCell.bind(this)(direction)) {
+      if (this.field.cells[wantedX][wantedY] === CONFIG.SWORD.SYMBOL) {
+        this.player.useItem(CONFIG.SWORD.SYMBOL)
+        this.deleteItem(wantedX, wantedY)
+      } else if (this.field.cells[wantedX][wantedY] === CONFIG.POTION.SYMBOL) {
+        this.player.useItem(CONFIG.POTION.SYMBOL)
+        this.deleteItem(wantedX, wantedY)
+      }
+
+      this.field.setCell(CONFIG.EMPTY.SYMBOL, this.player.x, this.player.y);
+      this.player.move(wantedX, wantedY);
+      this.field.setCell(CONFIG.PLAYER.SYMBOL, this.player.x, this.player.y);
+
+      this.player.moved = true;
+    }
+  }
+
+  deleteItem(x, y) {
+    for (let i = 0; i < this.items.length; i++) {
+      if (this.items[i].x === x && this.items[i].y === y) {
+        this.items.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  moveEnemies() {
+    this.enemies.forEach(enemy => {
+      if (!enemy.attacking) {
+        const dx = getRandomInt(-1, 1);
+        const dy = getRandomInt(-1, 1);
+
+        const wantedX = enemy.x + dx;
+        const wantedY = enemy.y + dy;
+
+        if (this.isValidMove(wantedX, wantedY)) {
+          this.field.setCell(CONFIG.EMPTY.SYMBOL, enemy.x, enemy.y);
+          enemy.move(wantedX, wantedY);
+          this.field.setCell(CONFIG.ENEMY.SYMBOL, enemy.x, enemy.y);
+        }
+      }
+    });
+  }
+
+  moveBoss() {
+    let distanceX, distanceY, wantedX, wantedY;
+
+    if (this.boss && this.boss.health > 0 && !this.boss.attacking) {
+      distanceX = this.player.x - this.boss.x;
+      distanceY = this.player.y - this.boss.y;
+      wantedX = this.boss.x + Math.sign(distanceX);
+      wantedY = this.boss.y + Math.sign(distanceY);
+
+      if (Math.abs(distanceX) > Math.abs(distanceY)) {
+        if (this.isValidMove(wantedX, this.boss.y)) {
+          wantedY = this.boss.y;
+        } else if (this.isValidMove(this.boss.x, wantedY)) {
+          wantedX = this.boss.x;
+        }
+      } else {
+        if (this.isValidMove(this.boss.x, wantedY)) {
+          wantedX = this.boss.x;
+        } else if (this.isValidMove(wantedX, this.boss.y)) {
+          wantedY = this.boss.y;
+        }
+      }
+
+      if (this.isValidMove(wantedX, wantedY)) {
+        this.field.setCell(CONFIG.EMPTY.SYMBOL, this.boss.x, this.boss.y);
+        this.boss.move(wantedX, wantedY);
+        this.field.setCell(CONFIG.BOSS.SYMBOL, this.boss.x, this.boss.y);
+      }
+    }
+  }
+
+  checkAttacks() {
+    this.checkPlayerAttacks();
+    this.checkEnemyAttacks();
+    this.checkBossAttacks();
+  }
+
+  checkPlayerAttacks() {
+    if (this.player.attacking) {
+      this.enemies.forEach(enemy => {
+        if (this.isNear(this.player, enemy)) {
+          this.player.attack(enemy);
+        }
+      });
+
+      if (this.boss && this.isNear(this.player, this.boss)) {
+        this.player.attack(this.boss);
+      }
+    }
+  }
+
+  checkEnemyAttacks() {
+    this.enemies.forEach(enemy => {
+      if (this.isNear(enemy, this.player)) {
+        enemy.attack(this.player);
+        enemy.attacking = true;
+      }
+    });
+  }
+
+  checkBossAttacks() {
+    if (this.boss && this.boss.health > 0 && this.isNear(this.boss, this.player)) {
+      this.boss.attack(this.player);
+      this.boss.attacking = true;
+    }
+  }
+
+  isNear(entity1, entity2) {
+    return Math.abs(entity1.x - entity2.x) <= 1 && Math.abs(entity1.y - entity2.y) <= 1;
+  }
+
+  isValidMove(x, y) {
+    return x >= 0 && x < this.field.columns &&
+      y >= 0 && y < this.field.rows &&
+      this.field.cells[x][y] === CONFIG.EMPTY.SYMBOL;
+  }
+
+  checkHP() {
+    for (let e = 0; e < this.enemies.length; e++) {
+      if (this.enemies[e].health <= 0) {
+
+        this.field.setCell(CONFIG.EMPTY.SYMBOL, this.enemies[e].x, this.enemies[e].y);
+        this.enemies.splice(e, 1);
+        e--;
+      }
+
+      if (this.boss && this.boss.health <= 0) {
+        this.field.setCell(CONFIG.SWORD.SYMBOL, this.boss.x, this.boss.y);
+        this.boss = null;
+      }
+    }
+  }
+
+  checkGameOver() {
+    if (this.player.health <= 0) {
+      this.field.setCell(CONFIG.SWORD.SYMBOL, this.player.x, this.player.y);
+      this.gameStatus = 'loss';
+      this.stopGame();
+    }
+
+    if (this.enemies.length === 0 && (!this.boss || this.boss.health <= 0)) {
+      this.gameStatus = 'win';
+      this.stopGame();
+    }
+  }
+
+  stopGame() {
+    this.draw();
+    if (this.mainTimer) {
+      clearInterval(this.mainTimer);
+      this.mainTimer = null;
     }
   }
 

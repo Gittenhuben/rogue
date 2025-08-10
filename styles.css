@@ -20,6 +20,7 @@ h1 {
   font-size: 30px;
   padding: 10px 0px;
   margin: 0;
+  margin-left: calc((100vw - var(--field-w)) / 2 - 8px);
 }
 
 .field-box {
@@ -125,6 +126,7 @@ h1 {
 
 @keyframes pulse {
   25% {
-    box-shadow: 0px 0px var(--h16) var(--h8) rgba(255, 0, 0, 0.1), 0px 0px var(--h8) var(--h8) rgba(255, 0, 0, 0.1);
+    box-shadow: 0px 0px var(--h16) var(--h8) rgba(255, 0, 0, 0.1),
+      0px 0px var(--h8) var(--h8) rgba(255, 0, 0, 0.1);
   }
 }
