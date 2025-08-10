@@ -1,0 +1,130 @@
+:root {
+    --main-cycle-delay: 1s;
+    --aspect: calc(5 / 3);
+    --field-h: min(calc(100vh - 76px), calc((100vw - 16px - 4px) / var(--aspect) + 4px));
+    --field-w: min(calc(100vw - 16px), calc((100vh - 76px - 4px) * var(--aspect) + 4px));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #000000;
+  color: #ffffff;
+  margin-top: max(8px, calc((100vh - var(--field-h)) / 2 - 60px));
+}
+
+h1 {
+  font-family: "Playfair Display";
+  font-size: 30px;
+  padding: 10px 0px;
+  margin: 0;
+}
+
+.field-box {
+  border: 2px solid #d0d0d0;
+  height: var(--field-h);
+  width: var(--field-w);
+  margin: auto;
+}
+
+.field {
+  height: 100%;
+  filter: contrast(200%) brightness(115%) saturate(500%);
+}
+
+.field.loss {
+  filter: contrast(200%) grayscale(100%);
+}
+
+.field.win {
+  filter: contrast(200%);
+}
+
+.field.win::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 255, 0, 0.2);
+}
+
+.field .tile {
+  background-size: 100%;
+  background-image: url(images/tile-.png);
+}
+
+.field .tileW {
+  background-image: url(images/tile-W.png);
+}
+
+.field .tileE {
+  background-image: url(images/tile-E.png);
+}
+
+.field .tileP {
+  background-image: url(images/tile-P.png);
+}
+
+.field .tileB {
+  background-image: url(images/tile-B.png);
+}
+
+.field .tileP,
+.field .tileE,
+.field .tileB {
+  position: relative;
+  --hp: 100%;
+  --strength: 0%;
+}
+
+.field .tileP::after {
+  content: '';
+  position: absolute;
+  top: calc(100% - 3px);
+  left: 0;
+  right: calc(100% - var(--strength));
+  height: 3px;
+  background-color: #ffff00;
+}
+
+.field .tileP::before,
+.field .tileE::before,
+.field .tileB::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: calc(100% - var(--hp)) ;
+  height: 3px;
+}
+
+.field .tileP::before {
+  background-color: #00ff00;
+}
+
+.field .tileE::before,
+.field .tileB::before {
+  background-color: #ff0000;
+}
+
+.field .tileHP {
+  background-image: url(images/tile-HP.png);
+}
+
+.field .tileSW {
+  background-image: url(images/tile-SW.png);
+}
+
+.field .attack {
+  animation: pulse var(--main-cycle-delay) infinite ease-in-out;
+  --h16: calc(var(--field-h) / 24 / 2);
+  --h8: calc(var(--h16) / 2);
+}
+
+@keyframes pulse {
+  25% {
+    box-shadow: 0px 0px var(--h16) var(--h8) rgba(255, 0, 0, 0.1), 0px 0px var(--h8) var(--h8) rgba(255, 0, 0, 0.1);
+  }
+}
