@@ -3,6 +3,7 @@
     --aspect: calc(5 / 3);
     --field-h: min(calc(100vh - 76px), calc((100vw - 16px - 4px) / var(--aspect) + 4px));
     --field-w: min(calc(100vw - 16px), calc((100vh - 76px - 4px) * var(--aspect) + 4px));
+    --cells-h-count: 24;
 }
 
 * {
@@ -120,7 +121,7 @@ h1 {
 
 .field .attack {
   animation: pulse var(--main-cycle-delay) infinite ease-in-out;
-  --h16: calc(var(--field-h) / 24 / 2);
+  --h16: calc(var(--field-h) / var(--cells-h-count) / 2);
   --h8: calc(var(--h16) / 2);
 }
 

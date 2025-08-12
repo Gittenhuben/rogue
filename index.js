@@ -210,6 +210,7 @@ class Renderer {
   initDOM(rows, columns) {
     document.documentElement.style.setProperty('--main-cycle-delay', CONFIG.DELAY / 1000 + 's');
     document.documentElement.style.setProperty('--aspect', columns / rows);
+    document.documentElement.style.setProperty('--cells-h-count', CONFIG.FIELD.ROWS);
 
     $('.field').css({
       display: 'grid',
